@@ -1,5 +1,41 @@
 from __future__ import annotations
 
+# Gameplay tuning: edit these values instead of hunting through app.py.
+# Smaller `FRUIT_FALL_SPEED_SCALE` means slower rocks.
+# `DIFFICULTIES` multiplies the rock speed again per difficulty.
+FRUIT_FALL_SPEED_SCALE = 0.1
+GET_READY_SECONDS = 3.0
+START_MENU_DWELL_SECONDS = 1.5
+TUTORIAL_AUTO_START_SECONDS = 1.0
+
+DIFFICULTIES = (
+    {"label": "Beginner", "speed": 0.75},
+    {"label": "Easy", "speed": 0.9},
+    {"label": "Normal", "speed": 1.0},
+    {"label": "Hard", "speed": 1.2},
+    {"label": "Master", "speed": 1.45},
+)
+DEFAULT_DIFFICULTY_INDEX = 2
+
+PIKMIN_SPAWN_MIN = 0
+PIKMIN_SPAWN_MAX = 3
+PIKMIN_BASE_SPEED_MIN = 90.0
+PIKMIN_BASE_SPEED_MAX = 170.0
+PIKMIN_FAST_RUNNER_CHANCE = 0.45
+PIKMIN_NORMAL_SPEED_SCALE_MIN = 0.95
+PIKMIN_NORMAL_SPEED_SCALE_MAX = 1.10
+PIKMIN_FAST_SPEED_SCALE_MIN = 1.65
+PIKMIN_FAST_SPEED_SCALE_MAX = 2.05
+PIKMIN_ACCELERATION = 90.0
+PIKMIN_MAX_SPEED = 260.0
+PIKMIN_WIGGLE_X = 18.0
+PIKMIN_WIGGLE_Y = 14.0
+
+TUTORIAL_PIKMIN_INITIAL_VX = 54.0
+TUTORIAL_PIKMIN_INITIAL_VY = -12.0
+TUTORIAL_PIKMIN_SPEED_SCALE = 0.35
+TUTORIAL_PIKMIN_TTL = 14.0
+
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 FPS = 60
@@ -34,15 +70,6 @@ CALIBRATION_MIN_SEEN = 1.0
 CALIBRATION_MIN_MOVEMENT = 220.0
 
 LEADERBOARD_PATH = "data/leaderboard.json"
-
-DIFFICULTIES = (
-    {"label": "Beginner", "speed": 0.75},
-    {"label": "Easy", "speed": 0.9},
-    {"label": "Normal", "speed": 1.0},
-    {"label": "Hard", "speed": 1.2},
-    {"label": "Master", "speed": 1.45},
-)
-DEFAULT_DIFFICULTY_INDEX = 2
 
 PERFECT_WINDOW = 0.12
 GOOD_WINDOW = 0.28

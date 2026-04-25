@@ -120,7 +120,7 @@ class RhythmSpawner:
     ) -> None:
         self.events = tuple(sorted(events, key=lambda event: event.timestamp))
         self.lead_time = lead_time
-        self.speed_multiplier = max(0.35, speed_multiplier)
+        self.speed_multiplier = max(0.05, speed_multiplier)
         self._next_index = 0
         self._rng = random.Random(seed)
 

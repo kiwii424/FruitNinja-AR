@@ -72,11 +72,11 @@ If MediaPipe cannot initialize on the current Python/macOS combination, the game
 - Index finger: shatter rocks with the light-saber trail.
 - Fist: catch escaping Pikmin-style creatures.
 - Open palm: trigger Fever mode when the gauge is full.
-- Start flow: type your name, run the hand-check stage, then start the game.
+- Start flow: type your name, run the hand-check stage, complete the cut/catch tutorial, then start the game.
 - Mouse: the game shows a custom cursor, hover glow, and click ripple on clickable buttons.
-- Hand UI: point at a button and hold briefly to activate it; outside gameplay, an open palm over a button activates it immediately.
-- Difficulty: choose one of five drop-speed levels on the start screen.
-- Buttons: hand check, start game, pause, resume, restart, choose music, quit.
+- Hand UI: point at a button and hold to activate it. On the start screen, the hand cursor must fill the dwell circle above the hovered button for about 1.5 seconds.
+- Difficulty: choose one of five drop-speed levels on the start screen. The rock drop speed is slowed to one-tenth of the earlier baseline.
+- Buttons: start, start training, pause, resume, restart, choose music, quit.
 - Keyboard shortcuts: `Enter` hand check from the name screen, `Space` start/pause/resume, `M` choose music, `R` restart, `Esc` quit.
 
 The lower-right camera preview shows the webcam feed, hand tracking overlay, and `HAND DETECTED` / `NO HAND` status so players can adjust position and lighting.
@@ -87,9 +87,13 @@ The on-screen detection box marks the reliable tracking area. If your hand stays
 
 When the Music button is activated by hand, the game cycles through audio files in `assets/music` instead of opening the OS file picker.
 
+During the tutorial, the player must:
+- cut a practice rock with the index-finger saber
+- catch a practice Pikmin with a fist
+
 ## Stages
 
-- Stage 1: image background, webcam hand gesture tracking, hand-check stage, saber trail, rock shattering, UI screens.
+- Stage 1: image background, webcam hand gesture tracking, hand-check stage, required tutorial, saber trail, rock shattering, UI screens.
 - Stage 2: local music selection and automatic beat/onset analysis for rhythm-based rock spawning.
 - Stage 3: score, combo, timing judgements, Fever multiplier, misses, Pikmin gallery, final grade, leaderboard.
 

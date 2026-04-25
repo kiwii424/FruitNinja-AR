@@ -32,6 +32,13 @@ class RhythmTests(unittest.TestCase):
         self.assertEqual(next_id, 2)
         self.assertEqual([fruit.fruit_id for fruit in fruits], [0, 1])
 
+    def test_spawner_keeps_low_speed_multiplier(self):
+        event = BeatEvent(timestamp=2.0, strength=0.5, index=0)
+        spawner = RhythmSpawner((event,), lead_time=4.0, speed_multiplier=0.15, seed=1)
+        fruits, _ = spawner.due_fruits(game_time=-2.0, width=800, height=600, next_fruit_id=0)
+        self.assertEqual(len(fruits), 1)
+        self.assertAlmostEqual(fruits[0].gravity_scale, 0.15)
+
 
 if __name__ == "__main__":
     unittest.main()

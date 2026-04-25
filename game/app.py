@@ -20,18 +20,36 @@ from .config import (
     FEVER_COOLDOWN,
     FEVER_DURATION,
     FPS,
+    FRUIT_FALL_SPEED_SCALE,
+    FRUIT_TYPES,
+    GET_READY_SECONDS,
     GOOD_COLOR,
     HAND_LOST_PAUSE_SECONDS,
     HIT_LINE_Y_RATIO,
     MAX_MISSES,
     MISS_COLOR,
+    PIKMIN_BASE_SPEED_MAX,
+    PIKMIN_BASE_SPEED_MIN,
+    PIKMIN_FAST_RUNNER_CHANCE,
+    PIKMIN_FAST_SPEED_SCALE_MAX,
+    PIKMIN_FAST_SPEED_SCALE_MIN,
+    PIKMIN_NORMAL_SPEED_SCALE_MAX,
+    PIKMIN_NORMAL_SPEED_SCALE_MIN,
+    PIKMIN_SPAWN_MAX,
+    PIKMIN_SPAWN_MIN,
     PIKMIN_VARIANTS,
     PERFECT_COLOR,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
     SPAWN_LEAD_TIME,
+    START_MENU_DWELL_SECONDS,
     TEXT_COLOR,
     TITLE,
+    TUTORIAL_AUTO_START_SECONDS,
+    TUTORIAL_PIKMIN_INITIAL_VX,
+    TUTORIAL_PIKMIN_INITIAL_VY,
+    TUTORIAL_PIKMIN_SPEED_SCALE,
+    TUTORIAL_PIKMIN_TTL,
     CAMERA_GAME_BOTTOM,
     CAMERA_GAME_LEFT,
     CAMERA_GAME_RIGHT,
@@ -39,7 +57,7 @@ from .config import (
     TRACKING_SAFE_MARGIN_X,
     TRACKING_SAFE_MARGIN_Y,
 )
-from .entities import PikminRunner, SliceSpark
+from .entities import Fruit, PikminRunner, SliceSpark
 from .gestures import HAND_CONNECTIONS, GestureState, HandTracker
 from .leaderboard import Leaderboard, LeaderboardEntry
 from .rhythm import MusicAnalysis, RhythmSpawner, analyze_music, default_analysis
@@ -70,6 +88,18 @@ class CalibrationState:
     @property
     def ready(self) -> bool:
         return self.seen_time >= CALIBRATION_MIN_SEEN and self.movement >= CALIBRATION_MIN_MOVEMENT
+
+
+@dataclass
+class TutorialState:
+    stage: str = "CUT"
+    cut_done: bool = False
+    catch_done: bool = False
+    auto_start_timer: float = 0.0
+
+    @property
+    def ready(self) -> bool:
+        return self.cut_done and self.catch_done
 
 
 @dataclass
@@ -159,10 +189,12 @@ class FruitNinjaARApp:
         self.pause_message = ""
         self.resume_after_calibration = False
         self.calibration = CalibrationState()
+        self.tutorial = TutorialState()
         self.results_saved = False
         self.new_high = False
         self.game_time = 0.0
         self.duration = self.analysis.duration
+        self.music_started = not bool(self.analysis.path)
         self.next_fruit_id = 0
         self.next_runner_id = 0
         self.fruits = []
@@ -245,7 +277,7 @@ class FruitNinjaARApp:
             self._handle_name_key(event)
         elif key == pygame.K_SPACE:
             if self.mode == "CALIBRATION":
-                self.start_game()
+                self.continue_from_calibration()
             elif self.mode == "RESULTS":
                 self.begin_calibration()
             elif self.mode == "PLAYING":
@@ -278,12 +310,13 @@ class FruitNinjaARApp:
         if action == "start":
             self.begin_calibration()
         elif action == "calibration_start":
-            self.start_game()
+            self.continue_from_calibration()
         elif action == "back":
             if self.resume_after_calibration:
                 self.resume_after_calibration = False
                 self._set_mode("PAUSED")
             else:
+                self._reset_tutorial()
                 self._set_mode("START")
         elif action == "pause":
             self.pause_game()
@@ -315,14 +348,18 @@ class FruitNinjaARApp:
             ]
             self.buttons = [
                 *difficulty_buttons,
-                Button(pygame.Rect(center_x - 160, 456, 320, 52), "Hand Check", "start"),
+                Button(pygame.Rect(center_x - 160, 456, 320, 52), "Start", "start"),
                 Button(pygame.Rect(center_x - 160, 520, 320, 52), "Music", "music"),
                 Button(pygame.Rect(center_x - 160, 584, 320, 52), "Quit", "quit"),
             ]
         elif self.mode == "CALIBRATION":
-            start_label = "Resume Game" if self.resume_after_calibration else "Start Game"
+            start_label = "Resume Game" if self.resume_after_calibration else "Start Training"
             self.buttons = [
                 Button(pygame.Rect(center_x - 160, 532, 320, 52), start_label, "calibration_start"),
+                Button(pygame.Rect(center_x - 160, 596, 320, 52), "Back", "back"),
+            ]
+        elif self.mode == "TUTORIAL":
+            self.buttons = [
                 Button(pygame.Rect(center_x - 160, 596, 320, 52), "Back", "back"),
             ]
         elif self.mode == "PAUSED":
@@ -363,6 +400,10 @@ class FruitNinjaARApp:
     def current_difficulty(self) -> dict[str, float | str]:
         return DIFFICULTIES[self.difficulty_index]
 
+    @property
+    def current_fruit_speed_multiplier(self) -> float:
+        return float(self.current_difficulty["speed"]) * FRUIT_FALL_SPEED_SCALE
+
     def begin_calibration(self) -> None:
         if not self.player_name.strip():
             self.player_name = "Player"
@@ -377,6 +418,7 @@ class FruitNinjaARApp:
             self.sparks.clear()
             self.fever_timer = 0.0
             self.fever_cooldown = 0.0
+            self._reset_tutorial()
         self.saber_points.clear()
         self.feedback.clear()
         self.hand_missing_time = 0.0
@@ -387,7 +429,7 @@ class FruitNinjaARApp:
         if not self._hand_input_available():
             self._block_start(self._hand_issue_message(self.latest_gesture))
 
-    def start_game(self) -> None:
+    def continue_from_calibration(self) -> None:
         if not self._can_start_play(self.latest_gesture):
             self._block_start(self._hand_issue_message(self.latest_gesture))
             return
@@ -397,20 +439,35 @@ class FruitNinjaARApp:
             self.hand_loss_pause = False
             self.pause_message = ""
             self.hand_missing_time = 0.0
-            if self.audio_ready:
+            if self.audio_ready and self.music_started:
                 pygame.mixer.music.unpause()
             self._set_mode("PLAYING")
             return
 
+        self._start_tutorial()
+
+    def _start_tutorial(self) -> None:
+        self._reset_tutorial()
+        self.fruits.clear()
+        self.runners.clear()
+        self.sparks.clear()
+        self.feedback.clear()
+        self.saber_points.clear()
+        self.hand_missing_time = 0.0
+        self._set_mode("TUTORIAL")
+
+    def _launch_new_game(self) -> None:
         self.score.reset()
-        speed = float(self.current_difficulty["speed"])
+        speed = self.current_fruit_speed_multiplier
+        lead_time = min(SPAWN_LEAD_TIME / max(0.05, speed), GET_READY_SECONDS)
         self.spawner = RhythmSpawner(
             self.analysis.events,
-            lead_time=SPAWN_LEAD_TIME / speed,
+            lead_time=lead_time,
             speed_multiplier=speed,
         )
-        self.game_time = 0.0
+        self.game_time = -GET_READY_SECONDS
         self.duration = max(self.analysis.duration, self.analysis.events[-1].timestamp + 3.0 if self.analysis.events else 30.0)
+        self.music_started = not bool(self.analysis.path)
         self.next_fruit_id = 0
         self.next_runner_id = 0
         self.fruits.clear()
@@ -429,15 +486,10 @@ class FruitNinjaARApp:
         self.hand_missing_time = 0.0
         self.hand_loss_pause = False
         self.pause_message = ""
+        self._reset_tutorial()
 
         if self.audio_ready:
             pygame.mixer.music.stop()
-            if self.analysis.path:
-                try:
-                    pygame.mixer.music.load(self.analysis.path)
-                    pygame.mixer.music.play()
-                except pygame.error as exc:
-                    self._set_status(f"Audio unavailable: {exc}", 3.0)
 
         self.sfx.play_start()
         self._set_mode("PLAYING")
@@ -445,7 +497,7 @@ class FruitNinjaARApp:
     def pause_game(self, reason: str = "", require_hand_check: bool = False) -> None:
         if self.mode != "PLAYING":
             return
-        if self.audio_ready:
+        if self.audio_ready and self.music_started:
             pygame.mixer.music.pause()
         self.hand_loss_pause = require_hand_check
         self.pause_message = reason
@@ -457,7 +509,7 @@ class FruitNinjaARApp:
         if self.hand_loss_pause:
             self._block_start("Run Hand Check again before resuming.")
             return
-        if self.audio_ready:
+        if self.audio_ready and self.music_started:
             pygame.mixer.music.unpause()
         self.pause_message = ""
         self._set_mode("PLAYING")
@@ -479,6 +531,14 @@ class FruitNinjaARApp:
                 self._spawn_confetti()
                 self._add_feedback("New High!", SCREEN_WIDTH / 2, 128, FEVER_COLOR)
         self._set_mode("RESULTS")
+
+    def _reset_tutorial(self) -> None:
+        self.tutorial = TutorialState()
+        self._clear_tutorial_targets()
+
+    def _clear_tutorial_targets(self) -> None:
+        self.fruits.clear()
+        self.runners.clear()
 
     def total_caught_pikmin(self) -> int:
         return sum(self.caught_pikmin.values())
@@ -565,6 +625,11 @@ class FruitNinjaARApp:
             self._update_sparks(dt)
             return
 
+        if self.mode == "TUTORIAL":
+            self._update_tutorial(dt, gesture)
+            self._update_sparks(dt)
+            return
+
         if self.mode != "PLAYING":
             self._update_saber(dt, gesture, allow_new_points=False)
             return
@@ -573,6 +638,7 @@ class FruitNinjaARApp:
             return
 
         self.game_time += dt
+        self._update_music_playback()
         self._update_timers(dt)
         self._update_saber(dt, gesture, allow_new_points=True)
         self._handle_fever_gesture(gesture)
@@ -627,9 +693,8 @@ class FruitNinjaARApp:
         if self.ui_activation_cooldown > 0:
             return False
 
-        palm_click = gesture.mode == "OPEN_PALM" and self.mode != "PLAYING" and hovered_button.action != "quit"
         dwell_click = self.ui_hover_time >= self._button_dwell_seconds(hovered_button)
-        if not palm_click and not dwell_click:
+        if not dwell_click:
             return False
 
         self.click_ripples.append(ClickRipple(float(pointer[0]), float(pointer[1])))
@@ -677,6 +742,125 @@ class FruitNinjaARApp:
         if allow_new_points and gesture.mode == "INDEX_SWORD" and gesture.fingertip:
             self.saber_points.append((gesture.fingertip, 0.24))
             self.saber_points = self.saber_points[-18:]
+
+    def _recent_saber_segments(self) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+        if len(self.saber_points) < 2:
+            return []
+        points = [point for point, _ in self.saber_points[-8:]]
+        return list(zip(points, points[1:]))
+
+    def _update_music_playback(self) -> None:
+        if not self.audio_ready or self.music_started or not self.analysis.path or self.game_time < 0:
+            return
+        try:
+            pygame.mixer.music.load(self.analysis.path)
+            pygame.mixer.music.play()
+        except pygame.error as exc:
+            self._set_status(f"Audio unavailable: {exc}", 3.0)
+        self.music_started = True
+
+    def _update_tutorial(self, dt: float, gesture: GestureState) -> None:
+        allow_saber = self.tutorial.stage == "CUT"
+        self._update_saber(dt, gesture, allow_new_points=allow_saber)
+
+        if self.tutorial.stage == "CUT":
+            if not self.fruits:
+                self._spawn_tutorial_rock()
+            for fruit in self.fruits:
+                fruit.rotation += 0.8 * dt
+            self._check_tutorial_slice()
+            return
+
+        if self.tutorial.stage == "CATCH":
+            if not self.runners:
+                self._spawn_tutorial_runner()
+            self._update_runners(dt)
+            self._check_tutorial_catch(gesture)
+            return
+
+        self.tutorial.auto_start_timer += dt
+        if self.tutorial.auto_start_timer >= TUTORIAL_AUTO_START_SECONDS:
+            self._launch_new_game()
+
+    def _spawn_tutorial_rock(self) -> None:
+        spec = self.rng.choice(FRUIT_TYPES)
+        self.fruits = [
+            Fruit(
+                fruit_id=self.next_fruit_id,
+                kind=str(spec["name"]),
+                x=SCREEN_WIDTH * 0.5,
+                y=SCREEN_HEIGHT * 0.53,
+                vx=0.0,
+                vy=0.0,
+                radius=float(spec["radius"]) * 1.15,
+                color=spec["color"],
+                accent=spec["accent"],
+                target_time=0.0,
+                strength=0.6,
+                gravity_scale=0.0,
+                spin=0.55,
+            )
+        ]
+        self.next_fruit_id += 1
+
+    def _spawn_tutorial_runner(self) -> None:
+        x = SCREEN_WIDTH * 0.34
+        y = SCREEN_HEIGHT * 0.56
+        variant = self.rng.choice(PIKMIN_VARIANTS)
+        self.runners = [
+            PikminRunner(
+                runner_id=self.next_runner_id,
+                variant=str(variant["name"]),
+                x=x,
+                y=y,
+                vx=TUTORIAL_PIKMIN_INITIAL_VX,
+                vy=TUTORIAL_PIKMIN_INITIAL_VY,
+                color=variant["color"],
+                target_x=SCREEN_WIDTH * 0.82,
+                target_y=SCREEN_HEIGHT * 0.34,
+                wiggle=self.rng.uniform(0, math.tau),
+                speed_scale=TUTORIAL_PIKMIN_SPEED_SCALE,
+                ttl=TUTORIAL_PIKMIN_TTL,
+            )
+        ]
+        self.next_runner_id += 1
+
+    def _check_tutorial_slice(self) -> None:
+        if not self.fruits:
+            return
+        fruit = self.fruits[0]
+        hit = any(fruit.intersects_segment(start, end) for start, end in self._recent_saber_segments())
+        if not hit:
+            return
+        self.fruits.clear()
+        self.tutorial.cut_done = True
+        self.tutorial.stage = "CATCH"
+        self._burst(fruit.x, fruit.y, fruit.color, amount=16)
+        self.sfx.play_hit()
+        self._add_feedback("Cut OK", fruit.x, fruit.y - 72, GOOD_COLOR)
+
+    def _check_tutorial_catch(self, gesture: GestureState) -> None:
+        if gesture.mode != "FIST" or gesture.palm_center is None:
+            return
+
+        remaining = []
+        caught_runner: PikminRunner | None = None
+        for runner in self.runners:
+            if runner.catchable_by(gesture.palm_center, radius=84.0):
+                runner.caught = True
+                caught_runner = runner
+            else:
+                remaining.append(runner)
+        self.runners = remaining
+        if caught_runner is None:
+            return
+
+        self.tutorial.catch_done = True
+        self.tutorial.stage = "DONE"
+        self.tutorial.auto_start_timer = 0.0
+        self.sfx.play_hit()
+        self._burst(caught_runner.x, caught_runner.y, caught_runner.color, amount=9)
+        self._add_feedback("Catch OK", caught_runner.x, caught_runner.y - 48, GOOD_COLOR)
 
     def _handle_fever_gesture(self, gesture: GestureState) -> None:
         open_palm = gesture.mode == "OPEN_PALM"
@@ -756,10 +940,9 @@ class FruitNinjaARApp:
         self.was_fist = fist_active
 
     def _check_slices(self) -> None:
-        if len(self.saber_points) < 2:
+        segments = self._recent_saber_segments()
+        if not segments:
             return
-        points = [point for point, _ in self.saber_points[-8:]]
-        segments = list(zip(points, points[1:]))
         remaining = []
         for fruit in self.fruits:
             hit = any(fruit.intersects_segment(start, end) for start, end in segments)
@@ -779,12 +962,18 @@ class FruitNinjaARApp:
         self._spawn_runners_from_rock(fruit.x, fruit.y, fruit.strength)
 
     def _spawn_runners_from_rock(self, x: float, y: float, strength: float) -> None:
-        count = self.rng.randint(1, 2 + int(strength * 2))
+        count = self.rng.randint(PIKMIN_SPAWN_MIN, PIKMIN_SPAWN_MAX)
         for _ in range(count):
             variant = self.rng.choice(PIKMIN_VARIANTS)
             target_x, target_y = self._random_edge_target()
             angle = math.atan2(target_y - y, target_x - x) + self.rng.uniform(-0.75, 0.75)
-            speed = self.rng.uniform(90, 170)
+            fast_runner = self.rng.random() < PIKMIN_FAST_RUNNER_CHANCE
+            speed_scale = (
+                self.rng.uniform(PIKMIN_FAST_SPEED_SCALE_MIN, PIKMIN_FAST_SPEED_SCALE_MAX)
+                if fast_runner
+                else self.rng.uniform(PIKMIN_NORMAL_SPEED_SCALE_MIN, PIKMIN_NORMAL_SPEED_SCALE_MAX)
+            )
+            speed = self.rng.uniform(PIKMIN_BASE_SPEED_MIN, PIKMIN_BASE_SPEED_MAX) * speed_scale
             self.runners.append(
                 PikminRunner(
                     runner_id=self.next_runner_id,
@@ -797,6 +986,7 @@ class FruitNinjaARApp:
                     target_x=target_x,
                     target_y=target_y,
                     wiggle=self.rng.uniform(0, math.tau),
+                    speed_scale=speed_scale,
                 )
             )
             self.next_runner_id += 1
@@ -940,6 +1130,8 @@ class FruitNinjaARApp:
         return max(0.0, min(1.0, self.ui_hover_time / self._button_dwell_seconds(button)))
 
     def _button_dwell_seconds(self, button: Button) -> float:
+        if self.mode == "START":
+            return START_MENU_DWELL_SECONDS if button.action != "quit" else START_MENU_DWELL_SECONDS + 0.6
         return QUIT_DWELL_SECONDS if button.action == "quit" else UI_DWELL_SECONDS
 
     def _draw(self, frame, gesture: GestureState) -> None:
@@ -951,7 +1143,7 @@ class FruitNinjaARApp:
                 self.screen,
                 self.fonts,
                 self.score,
-                self.game_time,
+                max(0.0, self.game_time),
                 self.duration,
                 self.fever_timer,
                 self.fever_cooldown,
@@ -964,6 +1156,8 @@ class FruitNinjaARApp:
             self._draw_start_screen()
         elif self.mode == "CALIBRATION":
             self._draw_calibration_screen(gesture)
+        elif self.mode == "TUTORIAL":
+            self._draw_tutorial_screen()
         elif self.mode == "PAUSED":
             self._draw_pause_screen()
         elif self.mode == "GALLERY":
@@ -1002,6 +1196,17 @@ class FruitNinjaARApp:
 
         self._draw_saber()
         self._draw_gesture_marker(gesture)
+
+        if self.mode == "PLAYING" and -GET_READY_SECONDS <= self.game_time < 0:
+            ready_text = f"Get Ready {max(1, math.ceil(-self.game_time))}"
+            draw_text(
+                self.screen,
+                ready_text,
+                self.fonts["title"],
+                FEVER_COLOR,
+                (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2),
+                "center",
+            )
 
         for item in self.feedback:
             alpha = max(0, min(255, int(255 * item.ttl / 0.8)))
@@ -1058,7 +1263,7 @@ class FruitNinjaARApp:
         difficulty = self.current_difficulty
         draw_text(
             self.screen,
-            f"Difficulty: {difficulty['label']}  Drop Speed x{difficulty['speed']}",
+            f"Difficulty: {difficulty['label']}  Drop Speed x{self.current_fruit_speed_multiplier:.2f}",
             self.fonts["small"],
             (205, 216, 228),
             (panel.centerx, panel.y + 328),
@@ -1102,6 +1307,48 @@ class FruitNinjaARApp:
         for button in self.buttons:
             active = button.action != "calibration_start" or self._can_start_play(gesture)
             self._draw_button(button, active=active)
+
+    def _draw_tutorial_screen(self) -> None:
+        draw_dim_overlay(self.screen, 82)
+        panel = pygame.Rect(0, 0, 860, 268)
+        panel.center = (SCREEN_WIDTH // 2, 166)
+        pygame.draw.rect(self.screen, (18, 25, 35), panel, border_radius=8)
+        pygame.draw.rect(self.screen, (255, 255, 255), panel, 2, border_radius=8)
+
+        stage_title = "Prompt 1: Cut" if self.tutorial.stage == "CUT" else "Prompt 2: Catch"
+        if self.tutorial.stage == "DONE":
+            stage_title = "Training Complete"
+
+        draw_text(self.screen, "New Player Training", self.fonts["title"], TEXT_COLOR, (panel.centerx, panel.y + 38), "center")
+        draw_text(self.screen, stage_title, self.fonts["medium"], FEVER_COLOR, (panel.centerx, panel.y + 90), "center")
+
+        cut_color = GOOD_COLOR if self.tutorial.cut_done else TEXT_COLOR
+        catch_color = GOOD_COLOR if self.tutorial.catch_done else TEXT_COLOR
+        draw_text(
+            self.screen,
+            f"[{'x' if self.tutorial.cut_done else ' '}] Cut: Use one raised index finger and slash the rock.",
+            self.fonts["small"],
+            cut_color,
+            (panel.x + 56, panel.y + 138),
+        )
+        draw_text(
+            self.screen,
+            f"[{'x' if self.tutorial.catch_done else ' '}] Catch: Make a fist and grab the running Pikmin.",
+            self.fonts["small"],
+            catch_color,
+            (panel.x + 56, panel.y + 176),
+        )
+
+        if self.tutorial.stage == "DONE":
+            subtitle = "Nice work. Starting the game now..."
+        elif self.tutorial.stage == "CUT":
+            subtitle = "Slash through the rock in the center with your index-finger saber."
+        else:
+            subtitle = "Grab the Pikmin with a fist before it runs away."
+        draw_text(self.screen, subtitle, self.fonts["small"], (205, 216, 228), (panel.centerx, panel.y + 220), "center")
+
+        for button in self.buttons:
+            self._draw_button(button)
 
     def _draw_pause_screen(self) -> None:
         draw_dim_overlay(self.screen, 170)
@@ -1184,6 +1431,8 @@ class FruitNinjaARApp:
     def _draw_button(self, button: Button, active: bool = True) -> None:
         enabled = active and self._button_enabled(button)
         hovered = enabled and self._button_hovered(button)
+        pointer = self._gesture_ui_pointer(self.latest_gesture)
+        hand_hovered = enabled and pointer is not None and button.rect.collidepoint(pointer)
         selected_difficulty = False
         if button.action.startswith("difficulty:"):
             try:
@@ -1219,18 +1468,20 @@ class FruitNinjaARApp:
         if selected_difficulty:
             pygame.draw.rect(self.screen, FEVER_COLOR, button.rect.inflate(8, 8), 3, border_radius=10)
 
-        progress = self._button_dwell_progress(button) if hovered else 0.0
+        progress = self._button_dwell_progress(button) if hand_hovered else 0.0
         if progress > 0:
-            center = (button.rect.right + 22, button.rect.centery)
-            pygame.draw.circle(self.screen, (25, 33, 44), center, 15)
+            center = (button.rect.centerx, button.rect.y - 20)
+            pygame.draw.circle(self.screen, (25, 33, 44), center, 16)
+            pygame.draw.circle(self.screen, (255, 255, 255), center, 16, 2)
             pygame.draw.arc(
                 self.screen,
                 FEVER_COLOR,
-                pygame.Rect(center[0] - 15, center[1] - 15, 30, 30),
+                pygame.Rect(center[0] - 16, center[1] - 16, 32, 32),
                 -math.pi / 2,
                 -math.pi / 2 + math.tau * progress,
                 4,
             )
+            pygame.draw.circle(self.screen, FEVER_COLOR, center, 3)
 
     def _draw_camera_preview(self, frame, gesture: GestureState) -> None:
         preview_width, preview_height = PREVIEW_SIZE
@@ -1348,7 +1599,11 @@ class FruitNinjaARApp:
             self.screen.blit(rotated, rotated.get_rect(center=(int(piece.x), int(piece.y))))
 
     def _draw_pointer_markers(self, gesture: GestureState) -> None:
-        if pygame.mouse.get_focused():
+        pointer = self._gesture_ui_pointer(gesture)
+        hand_active = pointer is not None and (self.mode != "PLAYING" or self._button_at(pointer) is not None)
+        mouse_active = pygame.mouse.get_focused() and not hand_active
+
+        if mouse_active:
             mouse_position = pygame.mouse.get_pos()
             hovered = self._button_at(mouse_position) is not None
             color = FEVER_COLOR if hovered else (255, 255, 255)
@@ -1357,8 +1612,7 @@ class FruitNinjaARApp:
             pygame.draw.line(self.screen, color, (mouse_position[0] - 14, mouse_position[1]), (mouse_position[0] + 14, mouse_position[1]), 2)
             pygame.draw.line(self.screen, color, (mouse_position[0], mouse_position[1] - 14), (mouse_position[0], mouse_position[1] + 14), 2)
 
-        pointer = self._gesture_ui_pointer(gesture)
-        if pointer is not None and self.mode != "PLAYING":
+        if hand_active:
             pygame.draw.circle(self.screen, (0, 0, 0), pointer, 18)
             pygame.draw.circle(self.screen, ACCENT_COLOR, pointer, 16, 3)
             pygame.draw.circle(self.screen, (255, 255, 255), pointer, 5)

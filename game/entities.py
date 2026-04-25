@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .config import GRAVITY
+from .config import GRAVITY, PIKMIN_ACCELERATION, PIKMIN_MAX_SPEED, PIKMIN_WIGGLE_X, PIKMIN_WIGGLE_Y
 
 
 def distance_point_to_segment(
@@ -90,6 +90,7 @@ class PikminRunner:
     target_x: float
     target_y: float
     wiggle: float
+    speed_scale: float = 1.0
     caught: bool = False
     ttl: float = 9.0
 
@@ -98,14 +99,16 @@ class PikminRunner:
         dx = self.target_x - self.x
         dy = self.target_y - self.y
         distance = max(1.0, math.hypot(dx, dy))
-        self.vx += dx / distance * 90.0 * dt
-        self.vy += dy / distance * 90.0 * dt
+        acceleration = PIKMIN_ACCELERATION * max(0.1, self.speed_scale)
+        self.vx += dx / distance * acceleration * dt
+        self.vy += dy / distance * acceleration * dt
         speed = math.hypot(self.vx, self.vy)
-        if speed > 260.0:
-            self.vx = self.vx / speed * 260.0
-            self.vy = self.vy / speed * 260.0
-        self.x += self.vx * dt + math.sin(self.ttl * 12.0 + self.wiggle) * 18.0 * dt
-        self.y += self.vy * dt + math.cos(self.ttl * 9.0 + self.wiggle) * 14.0 * dt
+        max_speed = PIKMIN_MAX_SPEED * max(0.1, self.speed_scale)
+        if speed > max_speed:
+            self.vx = self.vx / speed * max_speed
+            self.vy = self.vy / speed * max_speed
+        self.x += self.vx * dt + math.sin(self.ttl * 12.0 + self.wiggle) * PIKMIN_WIGGLE_X * self.speed_scale * dt
+        self.y += self.vy * dt + math.cos(self.ttl * 9.0 + self.wiggle) * PIKMIN_WIGGLE_Y * self.speed_scale * dt
 
     def escaped(self, width: int, height: int) -> bool:
         return self.ttl <= 0 or self.x < -60 or self.x > width + 60 or self.y < -60 or self.y > height + 60
