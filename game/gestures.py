@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Mapping, Sequence
@@ -153,13 +154,16 @@ class HandTracker:
                 self._enable_color_tracker("MediaPipe Tasks model missing")
                 return
             try:
+                # Use model_asset_buffer instead of model_asset_path so that
+                # MediaPipe's C++ layer never sees the file path — this is the
+                # only fix needed for Windows usernames with non-ASCII characters.
                 base_options = mp.tasks.BaseOptions(
-                    model_asset_path=str(model_path),
+                    model_asset_buffer=model_path.read_bytes(),
                     delegate=mp.tasks.BaseOptions.Delegate.CPU,
                 )
                 options = mp.tasks.vision.HandLandmarkerOptions(
                     base_options=base_options,
-                    running_mode=mp.tasks.vision.RunningMode.IMAGE,
+                    running_mode=mp.tasks.vision.RunningMode.VIDEO,
                     num_hands=max_num_hands,
                     min_hand_detection_confidence=0.58,
                     min_hand_presence_confidence=0.55,
@@ -212,7 +216,8 @@ class HandTracker:
             raw_landmarks = results.multi_hand_landmarks[0].landmark if results.multi_hand_landmarks else None
         elif self._backend == "tasks":
             image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb_frame)
-            results = self._hands.detect(image)
+            ts_ms = int(time.monotonic() * 1000)
+            results = self._hands.detect_for_video(image, ts_ms)
             raw_landmarks = results.hand_landmarks[0] if results.hand_landmarks else None
         elif self._backend == "color":
             return self._process_color(rgb_frame, screen_size)
