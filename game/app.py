@@ -181,7 +181,11 @@ class FruitNinjaARApp:
         self.buttons: list[Button] = []
         self.player_name = ""
         self.latest_gesture = GestureState()
-        self._gesture_window: deque = deque(maxlen=5)
+        self._gesture_window: deque = deque(maxlen=7)
+        self._gesture_pos_fallback: GestureState = GestureState()
+        self._gesture_pos_stale: int = 0
+        self._cursor_grace: float = 0.0
+        self._cursor_last_pos: tuple[int, int] | None = None
         self.latest_frame_available = False
         self.ui_hover_action: str | None = None
         self.ui_hover_time = 0.0
@@ -616,13 +620,30 @@ class FruitNinjaARApp:
         raw = self.tracker.process(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
         self._gesture_window.append(raw.mode)
         smoothed_mode = Counter(self._gesture_window).most_common(1)[0][0]
-        if smoothed_mode != raw.mode:
-            return replace(raw, mode=smoothed_mode)
-        return raw
+        result = replace(raw, mode=smoothed_mode) if smoothed_mode != raw.mode else raw
+
+        if result.confidence > 0.0:
+            self._gesture_pos_fallback = result
+            self._gesture_pos_stale = 0
+        else:
+            self._gesture_pos_stale += 1
+            if self._gesture_pos_stale <= 5 and self._gesture_pos_fallback.fingertip is not None:
+                result = replace(self._gesture_pos_fallback, mode=smoothed_mode)
+
+        return result
+
+    def _update_cursor_grace(self, dt: float, gesture: GestureState) -> None:
+        pos = self._gesture_ui_pointer(gesture)
+        if pos is not None:
+            self._cursor_last_pos = pos
+            self._cursor_grace = 0.15
+        else:
+            self._cursor_grace = max(0.0, self._cursor_grace - dt)
 
     def _update(self, dt: float, gesture: GestureState) -> None:
         self.status_timer = max(0.0, self.status_timer - dt)
         self.ui_activation_cooldown = max(0.0, self.ui_activation_cooldown - dt)
+        self._update_cursor_grace(dt, gesture)
         self._update_feedback(dt)
         self._update_click_ripples(dt)
         self._update_confetti(dt)
@@ -1632,6 +1653,8 @@ class FruitNinjaARApp:
 
     def _draw_pointer_markers(self, gesture: GestureState) -> None:
         pointer = self._gesture_ui_pointer(gesture)
+        if pointer is None and self._cursor_grace > 0.0:
+            pointer = self._cursor_last_pos
         hand_active = pointer is not None and (self.mode != "PLAYING" or self._button_at(pointer) is not None)
         mouse_active = pygame.mouse.get_focused() and not hand_active
 
