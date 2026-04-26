@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass
+from collections import Counter, deque
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pygame
@@ -180,6 +181,7 @@ class FruitNinjaARApp:
         self.buttons: list[Button] = []
         self.player_name = ""
         self.latest_gesture = GestureState()
+        self._gesture_window: deque = deque(maxlen=5)
         self.latest_frame_available = False
         self.ui_hover_action: str | None = None
         self.ui_hover_time = 0.0
@@ -611,7 +613,12 @@ class FruitNinjaARApp:
     def _read_gesture(self, frame) -> GestureState:
         if frame is None or not self.tracker.available:
             return GestureState(source="unavailable")
-        return self.tracker.process(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        raw = self.tracker.process(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        self._gesture_window.append(raw.mode)
+        smoothed_mode = Counter(self._gesture_window).most_common(1)[0][0]
+        if smoothed_mode != raw.mode:
+            return replace(raw, mode=smoothed_mode)
+        return raw
 
     def _update(self, dt: float, gesture: GestureState) -> None:
         self.status_timer = max(0.0, self.status_timer - dt)

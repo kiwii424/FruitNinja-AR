@@ -6,6 +6,21 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
+try:
+    import joblib as _joblib
+except ModuleNotFoundError:
+    _joblib = None  # type: ignore[assignment]
+
+# ML gesture classifier label map
+# 0 = INDEX_SWORD  1 = FIST  2 = OPEN_PALM  3 = SPEED_UP  4 = SKILL
+_GESTURE_LABEL_MAP: dict[int, str] = {
+    0: "INDEX_SWORD",
+    1: "FIST",
+    2: "OPEN_PALM",
+    3: "SPEED_UP",
+    4: "SKILL",
+}
+
 from .config import CAMERA_GAME_BOTTOM, CAMERA_GAME_LEFT, CAMERA_GAME_RIGHT, CAMERA_GAME_TOP
 
 
@@ -129,6 +144,17 @@ class HandTracker:
         self._cv2 = None
         self._np = None
 
+        # ML gesture classifier (optional — gracefully absent)
+        self.clf = None
+        if _joblib is not None:
+            model_path = Path("assets/models/gesture_classifier.pkl")
+            if model_path.exists():
+                try:
+                    self.clf = _joblib.load(model_path)
+                    print(f"[gestures] ML classifier loaded from {model_path}")
+                except Exception as exc:
+                    print(f"[gestures] Could not load classifier: {exc}")
+
         try:
             import mediapipe as mp
         except ModuleNotFoundError as exc:
@@ -178,6 +204,44 @@ class HandTracker:
             return
 
         self._enable_color_tracker("installed MediaPipe package has no Hands or HandLandmarker API")
+
+    # ------------------------------------------------------------------
+    # ML inference
+    # ------------------------------------------------------------------
+
+    def _predict_gesture(self, landmarks: list[LandmarkPoint]) -> tuple[str, int]:
+        """Run the trained sklearn classifier and return (mode, visible_fingers).
+
+        Pre-processing mirrors the training / test scripts:
+          1. Subtract wrist (landmark 0) so the hand is origin-centred.
+          2. Normalise by the maximum absolute value so scale is invariant.
+        Falls back to rule-based classify_pose when the model is absent or
+        raises an exception.
+        """
+        if self.clf is None:
+            return classify_pose(landmarks)
+
+        wrist = landmarks[0]
+        raw: list[float] = []
+        for lm in landmarks:
+            raw.extend([lm.x - wrist.x, lm.y - wrist.y])
+
+        max_val = max(abs(v) for v in raw) if raw else 1.0
+        if max_val == 0.0:
+            max_val = 1.0
+        features = [v / max_val for v in raw]
+
+        try:
+            pred_idx = int(self.clf.predict([features])[0])
+        except Exception:
+            return classify_pose(landmarks)
+
+        mode = _GESTURE_LABEL_MAP.get(pred_idx, "NONE")
+        # Reuse rule-based finger count for HUD / calibration meter
+        visible = sum(1 for up in classify_fingers(landmarks).values() if up)
+        return mode, visible
+
+    # ------------------------------------------------------------------
 
     def _enable_color_tracker(self, reason: str) -> None:
         try:
@@ -231,7 +295,7 @@ class HandTracker:
             return GestureState(confidence=0.0)
 
         landmarks = [LandmarkPoint(point.x, point.y, point.z) for point in raw_landmarks]
-        mode, visible_count = classify_pose(landmarks)
+        mode, visible_count = self._predict_gesture(landmarks)
         fingertip = landmarks[INDEX_TIP]
         palm_points = [landmarks[index] for index in (WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP)]
         palm_x = sum(point.x for point in palm_points) / len(palm_points)
@@ -283,6 +347,7 @@ class HandTracker:
         points = contour.reshape(-1, 2)
         distances = ((points[:, 0] - cx) ** 2 + (points[:, 1] - cy) ** 2)
         fingertip_raw = points[int(distances.argmax())]
+        
         x, y, w, h = cv2.boundingRect(contour)
 
         visible_fingers = self._estimate_fingers(cv2, contour)
