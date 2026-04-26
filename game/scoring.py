@@ -94,10 +94,10 @@ class ScoreKeeper:
         accuracy = self.accuracy()
         if accuracy >= 0.94 and self.misses <= 2:
             return "S"
-        if accuracy >= 0.86:
+        if accuracy >= 0.7:
             return "A"
-        if accuracy >= 0.74:
+        if accuracy >= 0.6:
             return "B"
-        if accuracy >= 0.60:
+        if accuracy >= 0.48:
             return "C"
         return "D"

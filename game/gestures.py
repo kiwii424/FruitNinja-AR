@@ -217,6 +217,9 @@ class HandTracker:
         elif self._backend == "tasks":
             image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb_frame)
             ts_ms = int(time.monotonic() * 1000)
+            if hasattr(self, '_last_ts_ms') and ts_ms <= self._last_ts_ms:
+                ts_ms = self._last_ts_ms + 1
+            self._last_ts_ms = ts_ms
             results = self._hands.detect_for_video(image, ts_ms)
             raw_landmarks = results.hand_landmarks[0] if results.hand_landmarks else None
         elif self._backend == "color":
