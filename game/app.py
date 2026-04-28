@@ -181,7 +181,8 @@ class FruitNinjaARApp:
         self.buttons: list[Button] = []
         self.player_name = ""
         self.latest_gesture = GestureState()
-        self._gesture_window: deque = deque(maxlen=7)
+        self._gesture_window: deque = deque(maxlen=9)
+        self._gesture_current_mode: str = "NONE"
         self._gesture_pos_fallback: GestureState = GestureState()
         self._gesture_pos_stale: int = 0
         self._cursor_grace: float = 0.0
@@ -619,7 +620,18 @@ class FruitNinjaARApp:
             return GestureState(source="unavailable")
         raw = self.tracker.process(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
         self._gesture_window.append(raw.mode)
-        smoothed_mode = Counter(self._gesture_window).most_common(1)[0][0]
+
+        counts = Counter(self._gesture_window)
+        best_mode, best_count = counts.most_common(1)[0]
+        window_len = len(self._gesture_window)
+        # Hysteresis: require 60% majority to leave current mode, preventing flicker
+        switch_threshold = math.ceil(window_len * 0.60)
+        if best_mode != self._gesture_current_mode and best_count < switch_threshold:
+            smoothed_mode = self._gesture_current_mode
+        else:
+            smoothed_mode = best_mode
+        self._gesture_current_mode = smoothed_mode
+
         result = replace(raw, mode=smoothed_mode) if smoothed_mode != raw.mode else raw
 
         if result.confidence > 0.0:
@@ -627,7 +639,7 @@ class FruitNinjaARApp:
             self._gesture_pos_stale = 0
         else:
             self._gesture_pos_stale += 1
-            if self._gesture_pos_stale <= 5 and self._gesture_pos_fallback.fingertip is not None:
+            if self._gesture_pos_stale <= 8 and self._gesture_pos_fallback.fingertip is not None:
                 result = replace(self._gesture_pos_fallback, mode=smoothed_mode)
 
         return result
@@ -636,7 +648,7 @@ class FruitNinjaARApp:
         pos = self._gesture_ui_pointer(gesture)
         if pos is not None:
             self._cursor_last_pos = pos
-            self._cursor_grace = 0.15
+            self._cursor_grace = 0.28
         else:
             self._cursor_grace = max(0.0, self._cursor_grace - dt)
 
