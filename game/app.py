@@ -22,8 +22,8 @@ from .config import (
     FEVER_COOLDOWN,
     FEVER_DURATION,
     FPS,
-    FRUIT_FALL_SPEED_SCALE,
-    FRUIT_TYPES,
+    ROCK_FALL_SPEED_SCALE,
+    ROCK_TYPES,
     GET_READY_SECONDS,
     GOOD_COLOR,
     HAND_LOST_PAUSE_SECONDS,
@@ -59,7 +59,7 @@ from .config import (
     TRACKING_SAFE_MARGIN_X,
     TRACKING_SAFE_MARGIN_Y,
 )
-from .entities import Fruit, PikminRunner, SliceSpark
+from .entities import PikminRunner, Rock, SliceSpark
 from .gestures import HAND_CONNECTIONS, GestureState, HandTracker
 from .leaderboard import Leaderboard, LeaderboardEntry
 from .rhythm import MusicAnalysis, RhythmSpawner, analyze_music, default_analysis
@@ -144,7 +144,7 @@ UI_ACTIVATION_COOLDOWN = 0.65
 PREVIEW_SIZE = (320, 180)
 
 
-class FruitNinjaARApp:
+class RockfallRiotHCIARGame:
     def __init__(self) -> None:
         pygame.init()
         self.audio_ready = True
@@ -204,9 +204,9 @@ class FruitNinjaARApp:
         self.game_time = 0.0
         self.duration = self.analysis.duration
         self.music_started = not bool(self.analysis.path)
-        self.next_fruit_id = 0
+        self.next_rock_id = 0
         self.next_runner_id = 0
-        self.fruits = []
+        self.rocks = []
         self.runners: list[PikminRunner] = []
         self.caught_pikmin: dict[str, int] = {str(item["name"]): 0 for item in PIKMIN_VARIANTS}
         self.sparks: list[SliceSpark] = []
@@ -410,8 +410,8 @@ class FruitNinjaARApp:
         return DIFFICULTIES[self.difficulty_index]
 
     @property
-    def current_fruit_speed_multiplier(self) -> float:
-        return float(self.current_difficulty["speed"]) * FRUIT_FALL_SPEED_SCALE
+    def current_rock_speed_multiplier(self) -> float:
+        return float(self.current_difficulty["speed"]) * ROCK_FALL_SPEED_SCALE
 
     def begin_calibration(self) -> None:
         if not self.player_name.strip():
@@ -422,7 +422,7 @@ class FruitNinjaARApp:
             pygame.mixer.music.stop()
         self.calibration = CalibrationState()
         if not resuming_paused_game:
-            self.fruits.clear()
+            self.rocks.clear()
             self.runners.clear()
             self.sparks.clear()
             self.fever_timer = 0.0
@@ -457,7 +457,7 @@ class FruitNinjaARApp:
 
     def _start_tutorial(self) -> None:
         self._reset_tutorial()
-        self.fruits.clear()
+        self.rocks.clear()
         self.runners.clear()
         self.sparks.clear()
         self.feedback.clear()
@@ -468,7 +468,7 @@ class FruitNinjaARApp:
     def _launch_new_game(self) -> None:
         self.score.reset()
         self.analytics.reset()
-        speed = self.current_fruit_speed_multiplier
+        speed = self.current_rock_speed_multiplier
         lead_time = min(SPAWN_LEAD_TIME / max(0.05, speed), GET_READY_SECONDS)
         self.spawner = RhythmSpawner(
             self.analysis.events,
@@ -478,9 +478,9 @@ class FruitNinjaARApp:
         self.game_time = -GET_READY_SECONDS
         self.duration = max(self.analysis.duration, self.analysis.events[-1].timestamp + 3.0 if self.analysis.events else 30.0)
         self.music_started = not bool(self.analysis.path)
-        self.next_fruit_id = 0
+        self.next_rock_id = 0
         self.next_runner_id = 0
-        self.fruits.clear()
+        self.rocks.clear()
         self.runners.clear()
         self.sparks.clear()
         self.feedback.clear()
@@ -547,7 +547,7 @@ class FruitNinjaARApp:
         self._clear_tutorial_targets()
 
     def _clear_tutorial_targets(self) -> None:
-        self.fruits.clear()
+        self.rocks.clear()
         self.runners.clear()
 
     def total_caught_pikmin(self) -> int:
@@ -685,8 +685,8 @@ class FruitNinjaARApp:
         self._update_timers(dt)
         self._update_saber(dt, gesture, allow_new_points=True)
         self._handle_fever_gesture(gesture)
-        self._spawn_due_fruits()
-        self._update_fruits(dt)
+        self._spawn_due_rocks()
+        self._update_rocks(dt)
         self._update_runners(dt)
         self._catch_runners(gesture)
         self._check_slices()
@@ -694,7 +694,7 @@ class FruitNinjaARApp:
 
         if self.score.misses >= MAX_MISSES:
             self.finish_game()
-        elif self.game_time >= self.duration and self.spawner.done and not self.fruits and not self.runners:
+        elif self.game_time >= self.duration and self.spawner.done and not self.rocks and not self.runners:
             self.finish_game()
 
     def _pause_if_hand_lost(self, dt: float, gesture: GestureState) -> bool:
@@ -807,10 +807,10 @@ class FruitNinjaARApp:
         self._update_saber(dt, gesture, allow_new_points=allow_saber)
 
         if self.tutorial.stage == "CUT":
-            if not self.fruits:
+            if not self.rocks:
                 self._spawn_tutorial_rock()
-            for fruit in self.fruits:
-                fruit.rotation += 0.8 * dt
+            for rock in self.rocks:
+                rock.rotation += 0.8 * dt
             self._check_tutorial_slice()
             return
 
@@ -826,10 +826,10 @@ class FruitNinjaARApp:
             self._launch_new_game()
 
     def _spawn_tutorial_rock(self) -> None:
-        spec = self.rng.choice(FRUIT_TYPES)
-        self.fruits = [
-            Fruit(
-                fruit_id=self.next_fruit_id,
+        spec = self.rng.choice(ROCK_TYPES)
+        self.rocks = [
+            Rock(
+                rock_id=self.next_rock_id,
                 kind=str(spec["name"]),
                 x=SCREEN_WIDTH * 0.5,
                 y=SCREEN_HEIGHT * 0.53,
@@ -844,7 +844,7 @@ class FruitNinjaARApp:
                 spin=0.55,
             )
         ]
-        self.next_fruit_id += 1
+        self.next_rock_id += 1
 
     def _spawn_tutorial_runner(self) -> None:
         x = SCREEN_WIDTH * 0.34
@@ -869,18 +869,18 @@ class FruitNinjaARApp:
         self.next_runner_id += 1
 
     def _check_tutorial_slice(self) -> None:
-        if not self.fruits:
+        if not self.rocks:
             return
-        fruit = self.fruits[0]
-        hit = any(fruit.intersects_segment(start, end) for start, end in self._recent_saber_segments())
+        rock = self.rocks[0]
+        hit = any(rock.intersects_segment(start, end) for start, end in self._recent_saber_segments())
         if not hit:
             return
-        self.fruits.clear()
+        self.rocks.clear()
         self.tutorial.cut_done = True
         self.tutorial.stage = "CATCH"
-        self._burst(fruit.x, fruit.y, fruit.color, amount=16)
+        self._burst(rock.x, rock.y, rock.color, amount=16)
         self.sfx.play_hit()
-        self._add_feedback("Cut OK", fruit.x, fruit.y - 72, GOOD_COLOR)
+        self._add_feedback("Cut OK", rock.x, rock.y - 72, GOOD_COLOR)
 
     def _check_tutorial_catch(self, gesture: GestureState) -> None:
         if gesture.mode != "FIST" or gesture.palm_center is None:
@@ -923,38 +923,38 @@ class FruitNinjaARApp:
         elif not self.score.trigger_fever():
             return
         self.fever_timer = FEVER_DURATION
-        cleared = list(self.fruits)
-        self.fruits.clear()
+        cleared = list(self.rocks)
+        self.rocks.clear()
         points = self.score.register_fever_clear(len(cleared))
-        for fruit in cleared:
-            self._shatter_rock(fruit, amount=8)
+        for rock in cleared:
+            self._shatter_rock(rock, amount=8)
         self._add_feedback("Fever", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 80, FEVER_COLOR)
         if points:
             self._add_feedback(f"+{points}", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 24, FEVER_COLOR)
 
-    def _spawn_due_fruits(self) -> None:
-        new_fruits, self.next_fruit_id = self.spawner.due_fruits(
+    def _spawn_due_rocks(self) -> None:
+        new_rocks, self.next_rock_id = self.spawner.due_rocks(
             self.game_time,
             SCREEN_WIDTH,
             SCREEN_HEIGHT,
-            self.next_fruit_id,
+            self.next_rock_id,
         )
         gate = self.analytics.spawn_gate
         if gate < 1.0:
-            new_fruits = [f for f in new_fruits if self.rng.random() < gate]
-        self.fruits.extend(new_fruits)
+            new_rocks = [rock for rock in new_rocks if self.rng.random() < gate]
+        self.rocks.extend(new_rocks)
 
-    def _update_fruits(self, dt: float) -> None:
+    def _update_rocks(self, dt: float) -> None:
         alive = []
-        for fruit in self.fruits:
-            fruit.update(dt)
-            if fruit.is_offscreen(SCREEN_HEIGHT):
+        for rock in self.rocks:
+            rock.update(dt)
+            if rock.is_offscreen(SCREEN_HEIGHT):
                 self.score.register_miss()
                 self.analytics.record_miss(self.game_time)
-                self._add_feedback("Miss", fruit.x, SCREEN_HEIGHT - 120, MISS_COLOR)
+                self._add_feedback("Miss", rock.x, SCREEN_HEIGHT - 120, MISS_COLOR)
             else:
-                alive.append(fruit)
-        self.fruits = alive
+                alive.append(rock)
+        self.rocks = alive
 
     def _update_runners(self, dt: float) -> None:
         alive = []
@@ -992,23 +992,23 @@ class FruitNinjaARApp:
         if not segments:
             return
         remaining = []
-        for fruit in self.fruits:
-            hit = any(fruit.intersects_segment(start, end) for start, end in segments)
+        for rock in self.rocks:
+            hit = any(rock.intersects_segment(start, end) for start, end in segments)
             if not hit:
-                remaining.append(fruit)
+                remaining.append(rock)
                 continue
-            offset = self.game_time - fruit.target_time
+            offset = self.game_time - rock.target_time
             result = self.score.register_slice(offset, fever_active=self.fever_timer > 0)
             self.analytics.record_hit(self.game_time, result.time_offset, result.judgement)
             color = PERFECT_COLOR if result.judgement == "Perfect" else GOOD_COLOR
-            self._add_feedback(result.judgement, fruit.x, fruit.y - fruit.radius - 20, color)
-            self._shatter_rock(fruit, amount=14)
+            self._add_feedback(result.judgement, rock.x, rock.y - rock.radius - 20, color)
+            self._shatter_rock(rock, amount=14)
             self.sfx.play_hit()
-        self.fruits = remaining
+        self.rocks = remaining
 
-    def _shatter_rock(self, fruit, amount: int) -> None:
-        self._burst(fruit.x, fruit.y, fruit.color, amount=amount)
-        self._spawn_runners_from_rock(fruit.x, fruit.y, fruit.strength)
+    def _shatter_rock(self, rock, amount: int) -> None:
+        self._burst(rock.x, rock.y, rock.color, amount=amount)
+        self._spawn_runners_from_rock(rock.x, rock.y, rock.strength)
 
     def _spawn_runners_from_rock(self, x: float, y: float, strength: float) -> None:
         count = self.rng.randint(PIKMIN_SPAWN_MIN, PIKMIN_SPAWN_MAX)
@@ -1238,8 +1238,8 @@ class FruitNinjaARApp:
         hit_y = int(SCREEN_HEIGHT * HIT_LINE_Y_RATIO)
         pygame.draw.line(self.screen, (255, 255, 255, 48), (0, hit_y), (SCREEN_WIDTH, hit_y), 2)
 
-        for fruit in self.fruits:
-            fruit.draw(self.screen)
+        for rock in self.rocks:
+            rock.draw(self.screen)
 
         for runner in self.runners:
             runner.draw(self.screen)
@@ -1293,7 +1293,7 @@ class FruitNinjaARApp:
         pygame.draw.rect(self.screen, (18, 25, 35), panel, border_radius=8)
         pygame.draw.rect(self.screen, (255, 255, 255), panel, 2, border_radius=8)
 
-        draw_text(self.screen, "AR Fruit Ninja", self.fonts["title"], TEXT_COLOR, (panel.centerx, panel.y + 50), "center")
+        draw_text(self.screen, "Rockfall Riot: HCI AR Game", self.fonts["title"], TEXT_COLOR, (panel.centerx, panel.y + 50), "center")
         draw_text(self.screen, f"Music: {self.analysis.title}", self.fonts["small"], (205, 216, 228), (panel.centerx, panel.y + 104), "center")
 
         label_y = panel.y + 146
@@ -1316,7 +1316,7 @@ class FruitNinjaARApp:
         difficulty = self.current_difficulty
         draw_text(
             self.screen,
-            f"Difficulty: {difficulty['label']}  Drop Speed x{self.current_fruit_speed_multiplier:.2f}",
+            f"Difficulty: {difficulty['label']}  Drop Speed x{self.current_rock_speed_multiplier:.2f}",
             self.fonts["small"],
             (205, 216, 228),
             (panel.centerx, panel.y + 328),
@@ -1715,4 +1715,4 @@ class FruitNinjaARApp:
 
 
 def run() -> int:
-    return FruitNinjaARApp().run()
+    return RockfallRiotHCIARGame().run()

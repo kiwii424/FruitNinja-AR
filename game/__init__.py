@@ -1,2 +1,1 @@
-"""AR Fruit Ninja game package."""
-
+"""Rockfall Riot: HCI AR Game package."""

@@ -1,4 +1,4 @@
-# AR Fruit Ninja ML Project
+# Rockfall Riot: HCI AR Game
 
 A Python desktop AR game for a machine learning project. The game uses `assets/background/BG.png` as the playfield background, while the webcam runs only for MediaPipe hand tracking. One raised index finger acts as a light-saber blade to shatter falling rocks, and a fist catches the small Pikmin-style creatures that run out.
 

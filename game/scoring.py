@@ -73,13 +73,13 @@ class ScoreKeeper:
         self.fever_uses += 1
         return True
 
-    def register_fever_clear(self, fruit_count: int) -> int:
-        if fruit_count <= 0:
+    def register_fever_clear(self, rock_count: int) -> int:
+        if rock_count <= 0:
             return 0
-        self.hits += fruit_count
-        self.combo += fruit_count
+        self.hits += rock_count
+        self.combo += rock_count
         self.max_combo = max(self.max_combo, self.combo)
-        points = 40 * fruit_count * FEVER_MULTIPLIER
+        points = 40 * rock_count * FEVER_MULTIPLIER
         self.score += points
         return points
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 # Gameplay tuning: edit these values instead of hunting through app.py.
-# Smaller `FRUIT_FALL_SPEED_SCALE` means slower rocks.
+# Smaller `ROCK_FALL_SPEED_SCALE` means slower rocks.
 # `DIFFICULTIES` multiplies the rock speed again per difficulty.
-FRUIT_FALL_SPEED_SCALE = 0.1
+ROCK_FALL_SPEED_SCALE = 0.1
 GET_READY_SECONDS = 3.0
 START_MENU_DWELL_SECONDS = 1.5
 TUTORIAL_AUTO_START_SECONDS = 1.0
@@ -40,7 +40,7 @@ SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 FPS = 60
 
-TITLE = "AR Fruit Ninja"
+TITLE = "Rockfall Riot: HCI AR Game"
 
 BACKGROUND_COLOR = (11, 17, 25)
 PANEL_COLOR = (18, 25, 35)
@@ -78,7 +78,7 @@ FEVER_DURATION = 6.0
 FEVER_COOLDOWN = 8.0
 FEVER_MULTIPLIER = 2
 
-FRUIT_TYPES = (
+ROCK_TYPES = (
     {
         "name": "Slate Rock",
         "color": (96, 102, 111),

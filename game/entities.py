@@ -28,8 +28,8 @@ def distance_point_to_segment(
 
 
 @dataclass
-class Fruit:
-    fruit_id: int
+class Rock:
+    rock_id: int
     kind: str
     x: float
     y: float
@@ -66,7 +66,7 @@ class Fruit:
         sides = 9
         for index in range(sides):
             angle = self.rotation + math.tau * index / sides
-            wobble = 0.78 + 0.18 * math.sin(index * 1.9 + self.fruit_id)
+            wobble = 0.78 + 0.18 * math.sin(index * 1.9 + self.rock_id)
             points.append((int(self.x + math.cos(angle) * radius * wobble), int(self.y + math.sin(angle) * radius * wobble)))
 
         pygame.draw.polygon(surface, self.color, points)

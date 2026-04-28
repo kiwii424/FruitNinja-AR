@@ -39,7 +39,7 @@ class AnalyticsTracker:
 
     @property
     def spawn_gate(self) -> float:
-        """Probability [0.55, 1.0] that a spawnable fruit is actually added.
+        """Probability [0.55, 1.0] that a spawnable rock is actually added.
         Decreases when the player is missing frequently; recovers as they improve."""
         return self._spawn_gate
 

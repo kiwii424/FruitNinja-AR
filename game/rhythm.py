@@ -8,12 +8,12 @@ from pathlib import Path
 from .config import (
     DEFAULT_BPM,
     DEFAULT_DURATION,
-    FRUIT_TYPES,
+    ROCK_TYPES,
     GRAVITY,
     HIT_LINE_Y_RATIO,
     SPAWN_LEAD_TIME,
 )
-from .entities import Fruit
+from .entities import Rock
 
 
 @dataclass(frozen=True)
@@ -131,36 +131,36 @@ class RhythmSpawner:
     def done(self) -> bool:
         return self._next_index >= len(self.events)
 
-    def due_fruits(
+    def due_rocks(
         self,
         game_time: float,
         width: int,
         height: int,
-        next_fruit_id: int,
-    ) -> tuple[list[Fruit], int]:
-        fruits: list[Fruit] = []
+        next_rock_id: int,
+    ) -> tuple[list[Rock], int]:
+        rocks: list[Rock] = []
         while self._next_index < len(self.events):
             event = self.events[self._next_index]
             if event.timestamp - self.lead_time > game_time:
                 break
-            event_fruits = self._build_fruits(event, game_time, width, height, next_fruit_id)
-            fruits.extend(event_fruits)
-            next_fruit_id += len(event_fruits)
+            event_rocks = self._build_rocks(event, game_time, width, height, next_rock_id)
+            rocks.extend(event_rocks)
+            next_rock_id += len(event_rocks)
             self._next_index += 1
-        return fruits, next_fruit_id
+        return rocks, next_rock_id
 
-    def _build_fruits(
+    def _build_rocks(
         self,
         event: BeatEvent,
         game_time: float,
         width: int,
         height: int,
-        next_fruit_id: int,
-    ) -> list[Fruit]:
+        next_rock_id: int,
+    ) -> list[Rock]:
         count = 2 if event.strength >= 0.84 and event.index % 4 == 0 else 1
-        fruits: list[Fruit] = []
+        rocks: list[Rock] = []
         for offset in range(count):
-            spec = self._rng.choice(FRUIT_TYPES)
+            spec = self._rng.choice(ROCK_TYPES)
             radius = float(spec["radius"]) * (0.92 + event.strength * 0.22)
             target_x = self._lane_x(width, event.index + offset * 2)
             target_y = height * HIT_LINE_Y_RATIO + self._rng.uniform(-76, 76)
@@ -174,9 +174,9 @@ class RhythmSpawner:
             if not math.isfinite(vy):
                 vy = 0.0
 
-            fruits.append(
-                Fruit(
-                    fruit_id=next_fruit_id + offset,
+            rocks.append(
+                Rock(
+                    rock_id=next_rock_id + offset,
                     kind=str(spec["name"]),
                     x=start_x,
                     y=start_y,
@@ -191,7 +191,7 @@ class RhythmSpawner:
                     spin=self._rng.uniform(-4.2, 4.2),
                 )
             )
-        return fruits
+        return rocks
 
     def _lane_x(self, width: int, index: int) -> float:
         lane_count = 7

@@ -1,4 +1,4 @@
-# FruitNinja-AR Handoff
+# Rockfall Riot: HCI AR Game Handoff
 
 ## Mission
 
@@ -44,15 +44,15 @@ Speed model:
 
 ## Key Files
 
-- [main.py](/Users/meredithhuang/code/Python/FruitNinja-AR/main.py): app entrypoint
-- [game/app.py](/Users/meredithhuang/code/Python/FruitNinja-AR/game/app.py): main loop, state machine, tutorial, UI flow, gameplay
-- [game/camera.py](/Users/meredithhuang/code/Python/FruitNinja-AR/game/camera.py): camera selection, built-in camera preference on macOS
-- [game/gestures.py](/Users/meredithhuang/code/Python/FruitNinja-AR/game/gestures.py): hand tracking and gesture classification
-- [game/rhythm.py](/Users/meredithhuang/code/Python/FruitNinja-AR/game/rhythm.py): beat analysis and rock spawning
-- [game/entities.py](/Users/meredithhuang/code/Python/FruitNinja-AR/game/entities.py): rocks, runners, spark effects
-- [game/scoring.py](/Users/meredithhuang/code/Python/FruitNinja-AR/game/scoring.py): score, combo, judgement windows, fever gauge
-- [game/leaderboard.py](/Users/meredithhuang/code/Python/FruitNinja-AR/game/leaderboard.py): persistent leaderboard logic
-- [README.md](/Users/meredithhuang/code/Python/FruitNinja-AR/README.md): setup and troubleshooting
+- [main.py](/Users/meredithhuang/code/Python/Rockfall-Riot-HCI-AR-Game/main.py): app entrypoint
+- [game/app.py](/Users/meredithhuang/code/Python/Rockfall-Riot-HCI-AR-Game/game/app.py): main loop, state machine, tutorial, UI flow, gameplay
+- [game/camera.py](/Users/meredithhuang/code/Python/Rockfall-Riot-HCI-AR-Game/game/camera.py): camera selection, built-in camera preference on macOS
+- [game/gestures.py](/Users/meredithhuang/code/Python/Rockfall-Riot-HCI-AR-Game/game/gestures.py): hand tracking and gesture classification
+- [game/rhythm.py](/Users/meredithhuang/code/Python/Rockfall-Riot-HCI-AR-Game/game/rhythm.py): beat analysis and rock spawning
+- [game/entities.py](/Users/meredithhuang/code/Python/Rockfall-Riot-HCI-AR-Game/game/entities.py): rocks, runners, spark effects
+- [game/scoring.py](/Users/meredithhuang/code/Python/Rockfall-Riot-HCI-AR-Game/game/scoring.py): score, combo, judgement windows, fever gauge
+- [game/leaderboard.py](/Users/meredithhuang/code/Python/Rockfall-Riot-HCI-AR-Game/game/leaderboard.py): persistent leaderboard logic
+- [README.md](/Users/meredithhuang/code/Python/Rockfall-Riot-HCI-AR-Game/README.md): setup and troubleshooting
 
 ## How To Run
 
