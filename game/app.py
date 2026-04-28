@@ -1151,9 +1151,13 @@ class FruitNinjaARApp:
     def _gesture_ui_pointer(self, gesture: GestureState) -> tuple[int, int] | None:
         if gesture.fingertip is None:
             return None
-        if gesture.mode not in {"INDEX_SWORD", "OPEN_PALM"}:
-            return None
-        return gesture.fingertip
+        if gesture.mode in {"INDEX_SWORD", "OPEN_PALM"}:
+            return gesture.fingertip
+        # Pointing finger downward misclassifies as FIST (fingertip.y > pip.y in image coords).
+        # In menu screens FIST is unused, so allow it as a pointer via fingertip position.
+        if gesture.mode == "FIST" and self.mode != "PLAYING":
+            return gesture.fingertip
+        return None
 
     def _button_enabled(self, button: Button) -> bool:
         if button.action == "calibration_start":
