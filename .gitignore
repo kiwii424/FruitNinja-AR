@@ -8,6 +8,7 @@ venv/
 .venv-1*/
 venv-1/
 .DS_Store
+.claude
 
 # Local music can be large and is usually user-provided.
 assets/music/*
