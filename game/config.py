@@ -4,6 +4,9 @@ from __future__ import annotations
 # Smaller `ROCK_FALL_SPEED_SCALE` means slower rocks.
 # `DIFFICULTIES` multiplies the rock speed again per difficulty.
 ROCK_FALL_SPEED_SCALE = 0.1
+ROCK_BEAT_SPEED_MIN = 0.82
+ROCK_BEAT_SPEED_MAX = 1.32
+ROCK_SPAWN_RATE = 0.5
 GET_READY_SECONDS = 3.0
 START_MENU_DWELL_SECONDS = 1.5
 TUTORIAL_AUTO_START_SECONDS = 1.0

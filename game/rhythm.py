@@ -11,6 +11,8 @@ from .config import (
     ROCK_TYPES,
     GRAVITY,
     HIT_LINE_Y_RATIO,
+    ROCK_BEAT_SPEED_MAX,
+    ROCK_BEAT_SPEED_MIN,
     SPAWN_LEAD_TIME,
 )
 from .entities import Rock
@@ -30,6 +32,7 @@ class MusicAnalysis:
     duration: float
     tempo: float
     events: tuple[BeatEvent, ...]
+    backend: str = "default"
 
 
 def default_events(duration: float = DEFAULT_DURATION, bpm: float = DEFAULT_BPM) -> tuple[BeatEvent, ...]:
@@ -52,61 +55,265 @@ def default_analysis() -> MusicAnalysis:
         duration=DEFAULT_DURATION,
         tempo=float(DEFAULT_BPM),
         events=default_events(),
+        backend="default",
     )
+
+
+def _onset_strengths(y, sr, beat_times) -> list[float]:
+    """Map beat timestamps to normalised onset-envelope strengths."""
+    import librosa
+    import numpy as np
+
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+    if onset_env.size == 0:
+        return [0.5 for _ in beat_times]
+
+    beat_values: list[float] = []
+    for t in beat_times:
+        frame = int(librosa.time_to_frames(float(t), sr=sr))
+        frame = max(0, min(frame, len(onset_env) - 1))
+        beat_values.append(float(onset_env[frame]))
+    return _normalize_strengths(beat_values)
+
+
+def _normalize_strengths(values: list[float]) -> list[float]:
+    import numpy as np
+
+    if not values:
+        return []
+
+    arr = np.asarray(values, dtype=float)
+    low = float(np.percentile(arr, 10))
+    high = float(np.percentile(arr, 95))
+    if not math.isfinite(low):
+        low = float(np.min(arr))
+    if not math.isfinite(high):
+        high = float(np.max(arr))
+    if high - low < 1e-6:
+        max_strength = float(np.max(arr))
+        if max_strength <= 1e-6:
+            return [0.5 for _ in values]
+        scaled = arr / max_strength
+    else:
+        scaled = (arr - low) / (high - low)
+
+    scaled = np.clip(scaled, 0.0, 1.0)
+    return [float(0.25 + value * 0.75) for value in scaled]
+
+
+def _numpy_compat_shim() -> None:
+    """
+    Restore deprecated numpy scalar aliases removed in NumPy 1.24.
+    Required for compiled madmom Cython extensions (.pyd) that still
+    reference np.int, np.float, etc. at runtime.
+    """
+    import numpy as np
+    _aliases = {
+        "int": np.int64, "float": np.float64, "bool": np.bool_,
+        "complex": np.complex128, "object": object, "str": str,
+    }
+    for name, alias in _aliases.items():
+        if not hasattr(np, name):
+            setattr(np, name, alias)
+
+
+def _analyze_with_tcn(path: str) -> tuple[tuple[BeatEvent, ...], float] | None:
+    """
+    Beat tracking via real TCN model (Davies & Böck, EUSIPCO 2019).
+
+    Architecture: CNN front-end (mel-spectrogram) → 11-layer dilated TCN
+    (dilation = 2^i, i=0..10) → DBN post-processor.
+    F-measure ~91% on standard benchmarks.
+
+    Pre-trained weights: beat_tracking_tcn/checkpoints/default_checkpoint.torch
+    Source: https://github.com/ben-hayes/beat-tracking-tcn
+
+    Returns (events, tempo_bpm) or None on any failure.
+    """
+    try:
+        import librosa
+        import numpy as np
+
+        _numpy_compat_shim()
+
+        from beat_tracking_tcn.beat_tracker import beatTracker
+
+        # beatTracker returns (beat_times, downbeat_times) in seconds
+        beat_times_arr, _ = beatTracker(path, downbeats=True)
+        beat_times: list[float] = list(beat_times_arr)
+
+        if not beat_times:
+            return None
+
+        y, sr = librosa.load(path, sr=None, mono=True)
+        strengths = _onset_strengths(y, sr, beat_times)
+
+        ibi = float(np.median(np.diff(beat_times))) if len(beat_times) > 1 else 60.0 / DEFAULT_BPM
+        tempo = 60.0 / ibi if ibi > 0 else float(DEFAULT_BPM)
+
+        events = tuple(
+            BeatEvent(timestamp=t, strength=s, index=i)
+            for i, (t, s) in enumerate(zip(beat_times, strengths))
+            if t >= 0.25
+        )
+        return events, tempo
+
+    except Exception:
+        return None
+
+
+def _analyze_with_madmom(path: str) -> tuple[tuple[BeatEvent, ...], float] | None:
+    """
+    Beat tracking via madmom RNN+DBN pipeline (Böck et al.).
+
+    Uses Bi-LSTM RNNBeatProcessor (the baseline TCN paper compares against).
+    F-measure ~88% on standard benchmarks.
+
+    Returns (events, tempo_bpm) or None on any failure.
+    """
+    try:
+        import librosa
+        import numpy as np
+
+        _numpy_compat_shim()
+
+        from madmom.features.beats import DBNBeatTrackingProcessor, RNNBeatProcessor
+
+        # RNN activation function: probability of beat at each 10ms frame
+        act = RNNBeatProcessor()(path)
+
+        # DBN decodes activations into beat timestamps (seconds)
+        proc = DBNBeatTrackingProcessor(fps=100)
+        beat_times: list[float] = list(proc(act))
+
+        if not beat_times:
+            return None
+
+        y, sr = librosa.load(path, sr=None, mono=True)
+        strengths = _onset_strengths(y, sr, beat_times)
+
+        # Estimate tempo from median inter-beat interval
+        ibi = float(np.median(np.diff(beat_times))) if len(beat_times) > 1 else 60.0 / DEFAULT_BPM
+        tempo = 60.0 / ibi if ibi > 0 else float(DEFAULT_BPM)
+
+        events = tuple(
+            BeatEvent(timestamp=t, strength=s, index=i)
+            for i, (t, s) in enumerate(zip(beat_times, strengths))
+            if t >= 0.25
+        )
+        return events, tempo
+
+    except Exception:
+        return None
+
+
+def _analyze_with_librosa(path: str) -> tuple[tuple[BeatEvent, ...], float, float] | None:
+    """
+    Fallback beat tracking via librosa (Ellis 2007 dynamic-programming).
+    Returns (events, tempo, duration) or None on failure.
+    """
+    try:
+        import librosa
+        import numpy as np
+
+        y, sr = librosa.load(path, sr=None, mono=True)
+        duration = float(librosa.get_duration(y=y, sr=sr))
+        if duration <= 0:
+            return None
+
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        tempo, beat_frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr, units="frames")
+        tempo_value = float(np.asarray(tempo).reshape(-1)[0]) if np.asarray(tempo).size else float(DEFAULT_BPM)
+
+        if len(beat_frames) == 0:
+            beat_frames = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr, units="frames")
+
+        times = librosa.frames_to_time(beat_frames, sr=sr)
+        if len(times) == 0:
+            return None
+
+        frame_strengths = onset_env[beat_frames]
+        normalized_strengths = _normalize_strengths([float(value) for value in frame_strengths])
+
+        events = tuple(
+            BeatEvent(
+                timestamp=float(t),
+                strength=normalized_strengths[i],
+                index=i,
+            )
+            for i, t in enumerate(times)
+            if 0.25 <= float(t) <= duration + 0.1
+        )
+        return events, tempo_value, duration
+
+    except Exception:
+        return None
 
 
 def analyze_music(path: str) -> MusicAnalysis:
     try:
         import librosa
-        import numpy as np
     except ModuleNotFoundError as exc:
         raise RuntimeError("librosa and numpy are required for music analysis") from exc
 
     music_path = Path(path)
-    y, sr = librosa.load(str(music_path), sr=None, mono=True)
-    duration = float(librosa.get_duration(y=y, sr=sr))
+
+    import librosa as _librosa
+    y_meta, sr_meta = _librosa.load(str(music_path), sr=None, mono=True)
+    duration = float(_librosa.get_duration(y=y_meta, sr=sr_meta))
     if duration <= 0:
         raise RuntimeError("music file has no playable duration")
 
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-    tempo, beat_frames = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr, units="frames")
-    tempo_value = float(np.asarray(tempo).reshape(-1)[0]) if np.asarray(tempo).size else float(DEFAULT_BPM)
+    # --- Primary: real TCN model (Davies & Böck, EUSIPCO 2019) ---
+    tcn_result = _analyze_with_tcn(str(music_path))
+    if tcn_result is not None:
+        events, tempo = tcn_result
+        if events:
+            return MusicAnalysis(
+                path=str(music_path),
+                title=music_path.stem,
+                duration=duration,
+                tempo=tempo,
+                events=events,
+                backend="tcn-dbn",
+            )
 
-    if len(beat_frames) == 0:
-        beat_frames = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr, units="frames")
+    # --- Secondary: madmom RNN+DBN pipeline (Böck et al., TCN paper baseline) ---
+    madmom_result = _analyze_with_madmom(str(music_path))
+    if madmom_result is not None:
+        events, tempo = madmom_result
+        if events:
+            return MusicAnalysis(
+                path=str(music_path),
+                title=music_path.stem,
+                duration=duration,
+                tempo=tempo,
+                events=events,
+                backend="madmom-dbn",
+            )
 
-    times = librosa.frames_to_time(beat_frames, sr=sr)
-    if len(times) == 0:
-        return MusicAnalysis(
-            path=str(music_path),
-            title=music_path.stem,
-            duration=duration,
-            tempo=tempo_value,
-            events=default_events(duration=duration, bpm=DEFAULT_BPM),
-        )
+    # --- Fallback: librosa dynamic-programming beat tracker ---
+    librosa_result = _analyze_with_librosa(str(music_path))
+    if librosa_result is not None:
+        events, tempo, _ = librosa_result
+        if events:
+            return MusicAnalysis(
+                path=str(music_path),
+                title=music_path.stem,
+                duration=duration,
+                tempo=tempo,
+                events=events,
+                backend="librosa-dp",
+            )
 
-    frame_strengths = onset_env[beat_frames]
-    max_strength = float(np.max(frame_strengths)) if len(frame_strengths) else 1.0
-    if max_strength <= 0:
-        max_strength = 1.0
-
-    events: list[BeatEvent] = []
-    for index, timestamp in enumerate(times):
-        timestamp_value = float(timestamp)
-        if timestamp_value < 0.25 or timestamp_value > duration + 0.1:
-            continue
-        strength = max(0.25, min(1.0, float(frame_strengths[index]) / max_strength))
-        events.append(BeatEvent(timestamp=timestamp_value, strength=strength, index=index))
-
-    if not events:
-        events = list(default_events(duration=duration, bpm=DEFAULT_BPM))
-
+    # --- Last resort: metronome at default BPM ---
     return MusicAnalysis(
         path=str(music_path),
         title=music_path.stem,
         duration=duration,
-        tempo=tempo_value,
-        events=tuple(events),
+        tempo=float(DEFAULT_BPM),
+        events=default_events(duration=duration, bpm=DEFAULT_BPM),
+        backend="default",
     )
 
 
@@ -158,6 +365,7 @@ class RhythmSpawner:
         next_rock_id: int,
     ) -> list[Rock]:
         count = 2 if event.strength >= 0.84 and event.index % 4 == 0 else 1
+        event_speed_multiplier = self._event_speed_multiplier(event)
         rocks: list[Rock] = []
         for offset in range(count):
             spec = self._rng.choice(ROCK_TYPES)
@@ -169,7 +377,7 @@ class RhythmSpawner:
             flight_time = max(0.72, event.timestamp - game_time)
 
             vx = (target_x - start_x) / flight_time
-            gravity = GRAVITY * self.speed_multiplier
+            gravity = GRAVITY * event_speed_multiplier
             vy = (target_y - start_y - 0.5 * gravity * flight_time * flight_time) / flight_time
             if not math.isfinite(vy):
                 vy = 0.0
@@ -187,11 +395,16 @@ class RhythmSpawner:
                     accent=spec["accent"],
                     target_time=event.timestamp,
                     strength=event.strength,
-                    gravity_scale=self.speed_multiplier,
+                    gravity_scale=event_speed_multiplier,
                     spin=self._rng.uniform(-4.2, 4.2),
                 )
             )
         return rocks
+
+    def _event_speed_multiplier(self, event: BeatEvent) -> float:
+        strength = max(0.0, min(1.0, event.strength))
+        beat_speed_scale = ROCK_BEAT_SPEED_MIN + (ROCK_BEAT_SPEED_MAX - ROCK_BEAT_SPEED_MIN) * strength
+        return max(0.05, self.speed_multiplier * beat_speed_scale)
 
     def _lane_x(self, width: int, index: int) -> float:
         lane_count = 7

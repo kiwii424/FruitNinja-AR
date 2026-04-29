@@ -23,6 +23,7 @@ from .config import (
     FEVER_DURATION,
     FPS,
     ROCK_FALL_SPEED_SCALE,
+    ROCK_SPAWN_RATE,
     ROCK_TYPES,
     GET_READY_SECONDS,
     GOOD_COLOR,
@@ -940,6 +941,7 @@ class RockfallRiotHCIARGame:
             self.next_rock_id,
         )
         gate = self.analytics.spawn_gate
+        gate *= ROCK_SPAWN_RATE
         if gate < 1.0:
             new_rocks = [rock for rock in new_rocks if self.rng.random() < gate]
         self.rocks.extend(new_rocks)
